@@ -255,7 +255,6 @@ class PtyProcess(object):
             # [issue #119] 3. The child closes the reading end and sets the
             # close-on-exec flag for the writing end.
             os.close(exec_err_pipe_read)
-            fcntl.fcntl(exec_err_pipe_write, fcntl.F_SETFD, fcntl.FD_CLOEXEC)
 
             # Do not allow child to inherit open file descriptors from parent,
             # with the exception of the exec_err_pipe_write of the pipe
@@ -263,10 +262,15 @@ class PtyProcess(object):
             # Impose ceiling on max_fd: AIX bugfix for users with unlimited
             # nofiles where resource.RLIMIT_NOFILE is 2^63-1 and os.closerange()
             # occasionally raises out of range error
-            max_fd = min(1048576, resource.getrlimit(resource.RLIMIT_NOFILE)[0])
-            spass_fds = sorted(set(pass_fds) | {exec_err_pipe_write})
-            for pair in zip([2] + spass_fds, spass_fds + [max_fd]):
-                os.closerange(pair[0]+1, pair[1])
+            for fdstr in os.listdir("/proc/self/fd"):
+                fdint = int(fdstr)
+                if fdint in pass_fds or fdint <= 2:
+                    continue
+                try:
+                    xx = fcntl.fcntl(fdint, fcntl.F_GETFD, 0)
+                    fcntl.fcntl(fdint, fcntl.F_SETFD, xx | fcntl.FD_CLOEXEC)
+                except OSError:
+                    pass
 
             if cwd is not None:
                 os.chdir(cwd)
